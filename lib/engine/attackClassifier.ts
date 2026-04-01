@@ -5,6 +5,7 @@ export type AttackType =
   | 'time_based'
   | 'error_based'
   | 'comment_injection'
+  | 'ddl_drop'
   | 'none'
 
 export function classifyAttack(input: string): AttackType {
@@ -16,6 +17,7 @@ export function classifyAttack(input: string): AttackType {
   if (/'?\s*OR\s*'?1'?\s*=\s*'?1|'\s*OR\s*1\s*=\s*1/i.test(input)) return 'classic_tautology'
   if (/AND\s+1\s*=\s*[12]/i.test(input))                         return 'blind_boolean'
   if (/--|#|\/\*/.test(input))                                    return 'comment_injection'
+  if (/DROP\s+TABLE|INSERT\s+INTO/i.test(input))                  return 'ddl_drop'
 
   void val
   return 'none'
@@ -28,5 +30,6 @@ export const attackLabels: Record<AttackType, string> = {
   time_based:        'Time-Based',
   error_based:       'Error-Based',
   comment_injection: 'Comment Injection',
+  ddl_drop:          'Destructive DDL (Drop/Insert)',
   none:              'No Attack Detected',
 }

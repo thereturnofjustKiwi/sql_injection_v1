@@ -85,13 +85,13 @@ const EXAMPLES = [
 
 // ─── Attack Meta ─────────────────────────────────────────────────────────────
 const ATTACK_META: Record<string, { color: string; bg: string; border: string; icon: string; gain: string; fix: string }> = {
-  classic:    { color: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: '🔓', gain: 'Authentication bypass — all rows returned', fix: 'Use parameterized queries: WHERE username = ?' },
-  blind:      { color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', icon: '👁',  gain: 'Boolean inference — schema structure revealed', fix: 'Validate input; reject unexpected characters' },
-  timebased:  { color: '#0369a1', bg: '#eff6ff', border: '#bfdbfe', icon: '⏱',  gain: 'Timing confirms vulnerability without visible output', fix: 'Use ORM or prepared statements with timeouts' },
-  errorbased: { color: '#9f1239', bg: '#fff1f2', border: '#fecdd3', icon: '⚠',  gain: 'DB version / schema metadata leaked via error message', fix: 'Suppress detailed error messages in production' },
-  union:      { color: '#065f46', bg: '#ecfdf5', border: '#a7f3d0', icon: '⛓',  gain: 'Cross-table data exfiltration', fix: 'Whitelist allowed columns; use parameterized queries' },
-  comment:    { color: '#3730a3', bg: '#eef2ff', border: '#c7d2fe', icon: '💬', gain: 'Logic stripped — WHERE clause bypassed', fix: 'Sanitize or reject -- and # characters' },
-  drop:       { color: '#7f1d1d', bg: '#fef2f2', border: '#fecaca', icon: '💣', gain: 'Destructive DDL — table deletion attempt', fix: 'Use least-privilege DB accounts; disable stacked queries' },
+  classic_tautology: { color: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: '🔓', gain: 'Authentication bypass — all rows returned', fix: 'Use parameterized queries: WHERE username = ?' },
+  blind_boolean:     { color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', icon: '👁',  gain: 'Boolean inference — schema structure revealed', fix: 'Validate input; reject unexpected characters' },
+  time_based:        { color: '#0369a1', bg: '#eff6ff', border: '#bfdbfe', icon: '⏱',  gain: 'Timing confirms vulnerability without visible output', fix: 'Use ORM or prepared statements with timeouts' },
+  error_based:       { color: '#9f1239', bg: '#fff1f2', border: '#fecdd3', icon: '⚠',  gain: 'DB version / schema metadata leaked via error message', fix: 'Suppress detailed error messages in production' },
+  union_based:       { color: '#065f46', bg: '#ecfdf5', border: '#a7f3d0', icon: '⛓',  gain: 'Cross-table data exfiltration', fix: 'Whitelist allowed columns; use parameterized queries' },
+  comment_injection: { color: '#3730a3', bg: '#eef2ff', border: '#c7d2fe', icon: '💬', gain: 'Logic stripped — WHERE clause bypassed', fix: 'Sanitize or reject -- and # characters' },
+  ddl_drop:          { color: '#7f1d1d', bg: '#fef2f2', border: '#fecaca', icon: '💣', gain: 'Destructive DDL — table deletion attempt', fix: 'Use least-privilege DB accounts; disable stacked queries' },
 }
 
 // ─── Query Engine ─────────────────────────────────────────────────────────────
@@ -106,13 +106,13 @@ function runQuery(query: string): QueryResult {
 
   // Destructive
   if (/drop\s+table/i.test(rawQ)) {
-    return { rows: [], error: `ERROR: DROP TABLE blocked — execution halted by WAF rule. Attack classified: DDL Injection`, affected: '—', execMs: fakeMs(), isMalicious: true, leakType: 'drop' }
+    return { rows: [], error: `ERROR: DROP TABLE blocked — execution halted by WAF rule. Attack classified: DDL Injection`, affected: '—', execMs: fakeMs(), isMalicious: true, leakType: 'ddl_drop' }
   }
 
   // Error-based
   if (/convert\s*\(int.*@@version|cast\s*\(.*@@version|extractvalue|updatexml/i.test(rawQ)) {
     return {
-      rows: [], execMs: fakeMs(), isMalicious: true, leakType: 'errorbased', affected: '0 rows',
+      rows: [], execMs: fakeMs(), isMalicious: true, leakType: 'error_based', affected: '0 rows',
       error: `ERROR 1105: Conversion failed when converting the nvarchar value 'Microsoft SQL Server 2019 (RTM-CU12) 15.0.4153.1 (X64) on Windows Server 2019' to data type int.\n` +
              `Schema: [dbo]  Tables: users, secrets, audit_log\n` +
              `Current DB User: sa  Hostname: DBSRV-PROD-01`,
@@ -125,12 +125,12 @@ function runQuery(query: string): QueryResult {
       ...mockDB.users as Record<string, unknown>[],
       ...mockDB.secrets.map(s => ({ id: s.id, username: '---', password: s.data, role: 'LEAKED', email: '---' })) as Record<string, unknown>[],
     ]
-    return { rows: leaked, error: null, execMs: fakeMs(), isMalicious: true, leakType: 'union', affected: `${leaked.length} rows (cross-table leak via UNION)` }
+    return { rows: leaked, error: null, execMs: fakeMs(), isMalicious: true, leakType: 'union_based', affected: `${leaked.length} rows (cross-table leak via UNION)` }
   }
 
   // WAITFOR / SLEEP
   if (/waitfor\s+delay|sleep\s*\(/i.test(rawQ)) {
-    return { rows: [], error: null, execMs: 2500 + Math.floor(Math.random() * 200), isMalicious: true, leakType: 'timebased', affected: '0 rows — delay confirms injectable endpoint' }
+    return { rows: [], error: null, execMs: 2500 + Math.floor(Math.random() * 200), isMalicious: true, leakType: 'time_based', affected: '0 rows — delay confirms injectable endpoint' }
   }
 
   // Tautology: OR '1'='1 or OR 1=1
@@ -138,7 +138,7 @@ function runQuery(query: string): QueryResult {
     const tbl = q.includes('secrets') ? mockDB.secrets as Record<string, unknown>[]
                : q.includes('audit')  ? mockDB.audit_log as Record<string, unknown>[]
                : mockDB.users as Record<string, unknown>[]
-    return { rows: tbl, error: null, execMs: fakeMs(), isMalicious: true, leakType: 'classic', affected: `${tbl.length} rows (all rows leaked via tautology)` }
+    return { rows: tbl, error: null, execMs: fakeMs(), isMalicious: true, leakType: 'classic_tautology', affected: `${tbl.length} rows (all rows leaked via tautology)` }
   }
 
   // Comment injection — strip after --
@@ -151,7 +151,7 @@ function runQuery(query: string): QueryResult {
     const uname = unameMatch[1]
     // Empty string due to comment stripping → return all
     if (uname === '' && rawQ.includes("'--") ) {
-      return { rows: mockDB.users as Record<string, unknown>[], error: null, execMs: fakeMs(), isMalicious: true, leakType: 'comment', affected: `${mockDB.users.length} rows (comment stripped WHERE clause)` }
+      return { rows: mockDB.users as Record<string, unknown>[], error: null, execMs: fakeMs(), isMalicious: true, leakType: 'comment_injection', affected: `${mockDB.users.length} rows (comment stripped WHERE clause)` }
     }
     const rows = mockDB.users.filter(u => u.username === uname) as Record<string, unknown>[]
     return { rows, error: null, execMs: fakeMs(), isMalicious: false, leakType: null, affected: `${rows.length} row(s)` }
@@ -247,12 +247,12 @@ export default function PlaygroundPage() {
   }, [handleRun])
 
   const threatLevel =
-    attackType === 'drop'       ? { label: 'CRITICAL', color: '#dc2626', bg: '#fef2f2' } :
-    attackType === 'errorbased' ? { label: 'HIGH',     color: '#b91c1c', bg: '#fff1f2' } :
-    attackType === 'union'      ? { label: 'HIGH',     color: '#b91c1c', bg: '#fff1f2' } :
-    attackType === 'classic'    ? { label: 'HIGH',     color: '#d97706', bg: '#fffbeb' } :
-    isMalicious                 ? { label: 'MEDIUM',   color: '#92400e', bg: '#fffbeb' } :
-                                  { label: 'SAFE',     color: '#047857', bg: '#f0fdf4' }
+    attackType === 'ddl_drop'          ? { label: 'CRITICAL', color: '#dc2626', bg: '#fef2f2' } :
+    attackType === 'error_based'       ? { label: 'HIGH',     color: '#b91c1c', bg: '#fff1f2' } :
+    attackType === 'union_based'       ? { label: 'HIGH',     color: '#b91c1c', bg: '#fff1f2' } :
+    attackType === 'classic_tautology' ? { label: 'HIGH',     color: '#d97706', bg: '#fffbeb' } :
+    isMalicious                        ? { label: 'MEDIUM',   color: '#92400e', bg: '#fffbeb' } :
+                                         { label: 'SAFE',     color: '#047857', bg: '#f0fdf4' }
 
   return (
     <>

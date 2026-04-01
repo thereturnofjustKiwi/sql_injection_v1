@@ -64,6 +64,7 @@ export default function SQLMatrixRain() {
     let animId: number
 
     function draw() {
+      if (!ctx) return
       // Fade the canvas — light mode bg with low alpha to create trails
       ctx.fillStyle = 'rgba(248, 249, 255, 0.18)'
       ctx.fillRect(0, 0, width, height)
